@@ -700,6 +700,224 @@ def mostrar_matriz(nombre, matriz, descripcion=None):
     st.latex(latex)
 
 
+
+# ============================================================
+# DESARROLLO PASO A PASO Y DIAGONALIZACIÓN
+# ============================================================
+
+def _paso(tipo, contenido, titulo=None):
+    return {"tipo": tipo, "contenido": contenido, "titulo": titulo}
+
+
+def mostrar_desarrollo(pasos, titulo="Desarrollo del cálculo"):
+    if not pasos:
+        return
+    st.markdown(f"### {titulo}")
+    for i, paso in enumerate(pasos, start=1):
+        if paso.get("titulo"):
+            st.markdown(f"**Paso {i}. {paso['titulo']}**")
+        if paso["tipo"] == "latex":
+            st.latex(paso["contenido"])
+        elif paso["tipo"] == "matriz":
+            st.latex(sp.latex(paso["contenido"]))
+        else:
+            st.write(paso["contenido"])
+
+
+def desarrollo_suma(A, B, C, limite=100):
+    pasos=[_paso("texto", "La suma se realiza elemento a elemento: c_ij = a_ij + b_ij.", "Regla")]
+    if A.rows*A.cols <= limite:
+        for i in range(A.rows):
+            for j in range(A.cols):
+                pasos.append(_paso("latex", rf"c_{{{i+1}{j+1}}}={sp.latex(A[i,j])}+{sp.latex(B[i,j])}={sp.latex(C[i,j])}", f"Elemento ({i+1},{j+1})"))
+    else:
+        pasos.append(_paso("texto", "Se omite el detalle celda por celda por el tamaño de la matriz."))
+    pasos.append(_paso("latex", rf"A+B={sp.latex(C)}", "Resultado"))
+    return pasos
+
+
+def desarrollo_multiplicacion(A, B, C, limite=64):
+    pasos=[_paso("texto", "Cada c_ij es el producto punto de la fila i de A con la columna j de B.", "Regla")]
+    if C.rows*C.cols <= limite:
+        for i in range(C.rows):
+            for j in range(C.cols):
+                terminos=[rf"({sp.latex(A[i,k])})({sp.latex(B[k,j])})" for k in range(A.cols)]
+                pasos.append(_paso("latex", rf"c_{{{i+1}{j+1}}}=" + "+".join(terminos) + rf"={sp.latex(C[i,j])}", f"Elemento ({i+1},{j+1})"))
+    else:
+        pasos.append(_paso("texto", "Se omite el detalle de cada producto fila-columna por el tamaño de la matriz."))
+    pasos.append(_paso("latex", rf"AB={sp.latex(C)}", "Resultado"))
+    return pasos
+
+
+def desarrollo_transpuesta(A, At, limite=100):
+    pasos=[_paso("texto", "La transpuesta intercambia filas por columnas: (A^T)_ij = A_ji.", "Regla")]
+    if A.rows*A.cols <= limite:
+        for i in range(A.rows):
+            for j in range(A.cols):
+                pasos.append(_paso("latex", rf"a_{{{i+1}{j+1}}}={sp.latex(A[i,j])}\Rightarrow (A^T)_{{{j+1}{i+1}}}={sp.latex(At[j,i])}"))
+    pasos.append(_paso("latex", rf"A^T={sp.latex(At)}", "Resultado"))
+    return pasos
+
+
+def desarrollo_determinante(A, detA):
+    n=A.rows
+    pasos=[]
+    if n==1:
+        pasos.append(_paso("latex", rf"\det(A)={sp.latex(A[0,0])}={sp.latex(detA)}"))
+    elif n==2:
+        a,b,c,d=A[0,0],A[0,1],A[1,0],A[1,1]
+        pasos.append(_paso("latex", rf"\det(A)=({sp.latex(a)})({sp.latex(d)})-({sp.latex(b)})({sp.latex(c)})={sp.latex(detA)}", "Fórmula 2×2"))
+    elif n==3:
+        a,b,c=A[0,0],A[0,1],A[0,2]; d,e,f=A[1,0],A[1,1],A[1,2]; g,h,i=A[2,0],A[2,1],A[2,2]
+        pos=[a*e*i,b*f*g,c*d*h]; neg=[c*e*g,b*d*i,a*f*h]
+        pasos.append(_paso("texto", "Para una matriz 3×3 se usa la regla de Sarrus.", "Método"))
+        pasos.append(_paso("latex", rf"\det(A)=({'+'.join(sp.latex(x) for x in pos)})-({'+'.join(sp.latex(x) for x in neg)})={sp.latex(detA)}"))
+    else:
+        pasos.append(_paso("texto", "Para orden mayor que 3 se usa eliminación exacta/Bareiss. La expansión completa por cofactores se omite porque crece muy rápidamente.", "Método"))
+        pasos.append(_paso("latex", rf"\det(A)={sp.latex(detA)}"))
+    return pasos
+
+
+def gauss_jordan_con_pasos(M, max_pasos=45):
+    R=sp.Matrix(M); pasos=[_paso("matriz", R.copy(), "Matriz inicial")]; fila=0
+    for col in range(R.cols):
+        if fila>=R.rows: break
+        piv=next((r for r in range(fila,R.rows) if sp.simplify(R[r,col])!=0),None)
+        if piv is None: continue
+        if piv!=fila:
+            R.row_swap(piv,fila); pasos.append(_paso("matriz",R.copy(),f"Intercambiar F{fila+1} ↔ F{piv+1}"))
+        pv=sp.simplify(R[fila,col])
+        if pv!=1:
+            R.row_op(fila,lambda v,j: sp.simplify(v/pv)); pasos.append(_paso("matriz",R.copy(),f"F{fila+1} ← F{fila+1}/({sp.sstr(pv)})"))
+        for r in range(R.rows):
+            if r==fila: continue
+            factor=sp.simplify(R[r,col])
+            if factor!=0:
+                base=R.row(fila)
+                R.row_op(r,lambda v,j,fac=factor,b=base: sp.simplify(v-fac*b[j]))
+                pasos.append(_paso("matriz",R.copy(),f"F{r+1} ← F{r+1} - ({sp.sstr(factor)})F{fila+1}"))
+                if len(pasos)>=max_pasos:
+                    pasos.append(_paso("texto","Se alcanzó el límite visual de pasos; la reducción continúa internamente."))
+                    return R.rref()[0],pasos
+        fila+=1
+    return R,pasos
+
+
+def desarrollo_inversa(A, invA):
+    if A.rows<=6:
+        aug=A.row_join(sp.eye(A.rows)); _,pasos=gauss_jordan_con_pasos(aug)
+        pasos.insert(0,_paso("texto","Se forma [A | I] y se aplica Gauss-Jordan hasta obtener [I | A^-1].","Método"))
+    else:
+        pasos=[_paso("texto","Para matrices grandes se usa eliminación exacta; se omite el detalle completo de todas las operaciones elementales.","Método")]
+    pasos.append(_paso("latex",rf"A^{{-1}}={sp.latex(invA)}","Resultado"))
+    pasos.append(_paso("latex",rf"AA^{{-1}}={sp.latex(sp.simplify(A*invA))}","Verificación"))
+    return pasos
+
+
+def calcular_diagonalizacion(A, resultado_auto):
+    if not resultado_auto.get("diagonalizable",False): return None
+    vecs=[]; vals=[]
+    for dato in resultado_auto["autovalores"]:
+        for v in dato["autovectores"]:
+            vecs.append(v); vals.append(dato["valor"])
+    if len(vecs)<A.rows: return None
+    P=sp.Matrix.hstack(*vecs[:A.rows])
+    if sp.simplify(P.det())==0: return None
+    D=sp.diag(*vals[:A.rows]); Pinv=sp.simplify(P.inv())
+    return {"P":P,"D":D,"P_inversa":Pinv,"verificacion":(Pinv*A*P).applyfunc(sp.simplify),"reconstruccion":(P*D*Pinv).applyfunc(sp.simplify)}
+
+
+def desarrollo_autovalores(A, resultado_auto, diag=None):
+    lam=sp.symbols('lambda'); pasos=[]; M=A-lam*sp.eye(A.rows); pol=sp.expand(M.det())
+    pasos.append(_paso("latex",rf"A-\lambda I={sp.latex(M)}","Construir A - λI"))
+    pasos.append(_paso("latex",rf"\det(A-\lambda I)={sp.latex(pol)}=0","Ecuación característica"))
+    for i,dato in enumerate(resultado_auto["autovalores"],1):
+        val=dato["valor"]; pasos.append(_paso("latex",rf"\lambda_{i}={sp.latex(val)}",f"Autovalor {i}"))
+        pasos.append(_paso("latex",rf"(A-\lambda_{i}I)v=0\Rightarrow {sp.latex(A-val*sp.eye(A.rows))}v=0","Autoespacio"))
+        for j,v in enumerate(dato["autovectores"],1): pasos.append(_paso("latex",rf"v_{{{i},{j}}}={sp.latex(v)}"))
+    if diag:
+        pasos.append(_paso("texto","Como hay n autovectores linealmente independientes, P se forma con ellos como columnas y D con los autovalores correspondientes.","Diagonalización"))
+        pasos.append(_paso("latex",rf"P={sp.latex(diag['P'])}")); pasos.append(_paso("latex",rf"D={sp.latex(diag['D'])}"))
+        pasos.append(_paso("latex",rf"P^{{-1}}AP={sp.latex(diag['verificacion'])}=D","Verificación"))
+        pasos.append(_paso("latex",rf"A=PDP^{{-1}}={sp.latex(diag['reconstruccion'])}"))
+    return pasos
+
+
+def desarrollo_subespacios(A,sub):
+    rref,piv=A.rref()
+    return [_paso("latex",rf"\operatorname{{rref}}(A)={sp.latex(rref)}","Reducir A"),_paso("texto",f"Columnas pivote: {[i+1 for i in piv]}. rango(A)={sub['rango']}.","Pivotes y rango"),_paso("latex",rf"\dim C(A)={sub['rango']},\quad\dim N(A)={A.cols-sub['rango']}"),_paso("latex",rf"\dim C(A^T)={sub['rango']},\quad\dim N(A^T)={A.rows-sub['rango']}"),_paso("texto","Las bases salen de columnas pivote, filas independientes y soluciones de Ax=0 y A^T y=0.")]
+
+
+def desarrollo_svd(A,resultados):
+    AtA=(A.T*A).applyfunc(sp.simplify); pasos=[_paso("latex",rf"A^TA={sp.latex(AtA)}","Formar AᵀA"),_paso("texto","Los valores singulares son las raíces cuadradas no negativas de los autovalores de A^T A."),_paso("latex",r"A=U\Sigma V^T")]
+    pasos += [_paso("latex",rf"U={sp.latex(resultados['U'])}"),_paso("latex",rf"\Sigma={sp.latex(resultados['Sigma'])}"),_paso("latex",rf"V^T={sp.latex(resultados['Vt'])}"),_paso("latex",rf"U\Sigma V^T={sp.latex(resultados['reconstruida'])}","Reconstrucción")]
+    return pasos
+
+
+def desarrollo_sistema(A,b,resultado):
+    _,pasos=gauss_jordan_con_pasos(A.row_join(b)); pasos.insert(0,_paso("texto","Se forma [A|b] y se aplica Gauss-Jordan.","Método"))
+    pasos.append(_paso("latex",rf"\operatorname{{rref}}([A|b])={sp.latex(resultado['rref'])}","Forma final"))
+    pasos.append(_paso("texto",f"rango(A)={resultado['rango_A']}, rango([A|b])={resultado['rango_aumentada']}, incógnitas={resultado['numero_incognitas']}. {resultado['clasificacion']}."))
+    if resultado.get("solucion") is not None: pasos.append(_paso("latex",sp.latex(resultado["solucion"]),"Solución"))
+    return pasos
+
+
+def desarrollo_producto_punto(u,v,res):
+    term=[rf"({sp.latex(u[i])})({sp.latex(v[i])})" for i in range(u.rows)]
+    return [_paso("texto","Se multiplican componentes correspondientes y luego se suman."),_paso("latex",r"u\cdot v="+"+".join(term)+rf"={sp.latex(res)}")]
+
+
+def desarrollo_norma(v,norma,normalizado):
+    cuadrados="+".join(rf"({sp.latex(v[i])})^2" for i in range(v.rows))
+    return [_paso("latex",rf"\|v\|=\sqrt{{{cuadrados}}}={sp.latex(norma)}","Norma"),_paso("latex",rf"\hat v=\frac{{v}}{{\|v\|}}={sp.latex(normalizado)}","Normalización")]
+
+
+def desarrollo_gram_schmidt(vectores,base_ortogonal,base_ortonormal):
+    pasos=[]
+    for i,v in enumerate(vectores):
+        if i==0: pasos.append(_paso("latex",rf"u_1=v_1={sp.latex(base_ortogonal[0])}","Primer vector"))
+        else:
+            partes=[]
+            for j in range(i):
+                uj=base_ortogonal[j]; coef=sp.simplify(v.dot(uj)/uj.dot(uj)); partes.append(rf"({sp.latex(coef)}){sp.latex(uj)}")
+            pasos.append(_paso("latex",rf"u_{i+1}=v_{i+1}-"+"-".join(partes)+rf"={sp.latex(base_ortogonal[i])}",f"Ortogonalizar v{i+1}"))
+    for i,e in enumerate(base_ortonormal,1): pasos.append(_paso("latex",rf"e_{i}=\frac{{u_{i}}}{{\|u_{i}\|}}={sp.latex(e)}",f"Normalizar u{i}"))
+    return pasos
+
+
+def _paso_a_texto_pdf(paso):
+    c=paso["contenido"]
+    if paso["tipo"]=="matriz": c=sp.sstr(c)
+    elif paso["tipo"]=="latex": c=c.replace("\\lambda","lambda").replace("\\cdot","*").replace("\\Rightarrow","=>")
+    return (f"{paso['titulo']}: " if paso.get("titulo") else "")+str(c)
+
+
+def generar_pdf_operacion(titulo,entradas,pasos,resultado_texto=None):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Preformatted
+    except ImportError:
+        raise ValueError("Para descargar PDF instale ReportLab con: pip install reportlab")
+    from io import BytesIO
+    buf=BytesIO(); styles=getSampleStyleSheet(); doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=1.5*cm,leftMargin=1.5*cm,topMargin=1.5*cm,bottomMargin=1.5*cm,title=titulo)
+    story=[Paragraph("Calculadora de Álgebra Lineal",styles["Title"]),Paragraph(titulo,styles["Heading1"]),Spacer(1,8)]
+    for nombre,obj in entradas:
+        story += [Paragraph(nombre,styles["Heading3"]),Preformatted(sp.sstr(obj),styles["Code"]),Spacer(1,5)]
+    story.append(Paragraph("Desarrollo del cálculo",styles["Heading2"]))
+    for i,p in enumerate(pasos,1): story += [Paragraph(f"Paso {i}",styles["Heading4"]),Preformatted(_paso_a_texto_pdf(p),styles["Code"]),Spacer(1,4)]
+    if resultado_texto: story += [Paragraph("Resultado",styles["Heading2"]),Preformatted(str(resultado_texto),styles["Code"])]
+    doc.build(story); buf.seek(0); return buf.getvalue()
+
+
+def boton_pdf_operacion(titulo,entradas,pasos,nombre_archivo,resultado_texto=None,key=None):
+    try:
+        pdf=generar_pdf_operacion(titulo,entradas,pasos,resultado_texto)
+        st.download_button("⬇️ Descargar desarrollo en PDF",pdf,nombre_archivo,"application/pdf",use_container_width=True,key=key,on_click="ignore")
+    except ValueError as error:
+        st.warning(str(error))
+
 # ============================================================
 # GENERACIÓN DEL INFORME PDF DEL ANÁLISIS DE UNA MATRIZ
 # ============================================================
@@ -1158,6 +1376,25 @@ def generar_pdf_analisis(A, resultados, errores):
         )
     else:
         agregar_mensaje_no_disponible("svd")
+
+    desarrollos = resultados.get("desarrollos", {})
+    if desarrollos:
+        elementos.append(PageBreak())
+        elementos.append(Paragraph("Desarrollo paso a paso", estilos["Heading1"]))
+        nombres = {"transpuesta":"Transpuesta","determinante":"Determinante","inversa":"Inversa por Gauss-Jordan","autovalores":"Autovalores y diagonalización","subespacios":"Subespacios fundamentales","svd":"Descomposición SVD"}
+        for clave, pasos in desarrollos.items():
+            elementos.append(Paragraph(nombres.get(clave,clave), estilos["Seccion"]))
+            for idx,paso in enumerate(pasos,1):
+                texto=_paso_a_texto_pdf(paso).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                elementos.append(Paragraph(f"<b>Paso {idx}:</b> {texto}", estilos["BodyText"]))
+                elementos.append(Spacer(1,4))
+    diag=resultados.get("diagonalizacion")
+    if diag:
+        elementos.append(Paragraph("Matriz diagonalizada", estilos["Seccion"]))
+        tabla_matriz(diag["P"], "P - Matriz de autovectores")
+        tabla_matriz(diag["D"], "D - Matriz diagonal")
+        tabla_matriz(diag["P_inversa"], "P^-1")
+        tabla_matriz(diag["verificacion"], "Verificación P^-1 A P = D")
 
     documento.build(elementos)
 
@@ -1697,6 +1934,9 @@ if operacion == "Suma de matrices":
                     B,
                     resultado
                 )
+                pasos = desarrollo_suma(A,B,resultado)
+                st.divider(); mostrar_desarrollo(pasos)
+                boton_pdf_operacion("Suma de matrices",[("Matriz A",A),("Matriz B",B)],pasos,"suma_matrices.pdf",sp.sstr(resultado),key="pdf_suma")
 
             except ValueError as error:
 
@@ -1816,6 +2056,9 @@ elif operacion == "Multiplicación de matrices":
                     B,
                     resultado
                 )
+                pasos = desarrollo_multiplicacion(A,B,resultado)
+                st.divider(); mostrar_desarrollo(pasos)
+                boton_pdf_operacion("Multiplicación de matrices",[("Matriz A",A),("Matriz B",B)],pasos,"multiplicacion_matrices.pdf",sp.sstr(resultado),key="pdf_mult")
 
             except ValueError as error:
 
@@ -1950,9 +2193,10 @@ elif operacion == "Análisis de una matriz":
             except ValueError as error:
                 errores["inversa"] = str(error)
 
-            # Autovalores y autovectores
+            # Autovalores, autovectores y diagonalización
             try:
                 resultados["autovalores"] = analizar_autovalores(A)
+                resultados["diagonalizacion"] = calcular_diagonalizacion(A, resultados["autovalores"])
             except ValueError as error:
                 errores["autovalores"] = str(error)
 
@@ -2004,6 +2248,15 @@ elif operacion == "Análisis de una matriz":
                 errores["svd"] = (
                     "No fue posible calcular la SVD de la matriz ingresada."
                 )
+
+            desarrollos = {}
+            if "transpuesta" in resultados: desarrollos["transpuesta"] = desarrollo_transpuesta(A, resultados["transpuesta"])
+            if "determinante" in resultados: desarrollos["determinante"] = desarrollo_determinante(A, resultados["determinante"])
+            if "inversa" in resultados: desarrollos["inversa"] = desarrollo_inversa(A, resultados["inversa_simplificada"])
+            if "autovalores" in resultados: desarrollos["autovalores"] = desarrollo_autovalores(A, resultados["autovalores"], resultados.get("diagonalizacion"))
+            if "subespacios" in resultados: desarrollos["subespacios"] = desarrollo_subespacios(A, resultados["subespacios"])
+            if "svd" in resultados: desarrollos["svd"] = desarrollo_svd(A, resultados)
+            resultados["desarrollos"] = desarrollos
 
             st.divider()
 
@@ -2081,6 +2334,8 @@ elif operacion == "Análisis de una matriz":
                         "La transpuesta se obtiene intercambiando "
                         "las filas por las columnas."
                     )
+                    st.divider()
+                    mostrar_desarrollo(resultados["desarrollos"]["transpuesta"])
 
                 else:
                     st.info(errores["transpuesta"])
@@ -2110,6 +2365,8 @@ elif operacion == "Análisis de una matriz":
                         st.success(
                             "El determinante es distinto de 0."
                         )
+                    st.divider()
+                    mostrar_desarrollo(resultados["desarrollos"]["determinante"])
 
                 else:
                     st.info(errores["determinante"])
@@ -2171,6 +2428,8 @@ elif operacion == "Análisis de una matriz":
                         st.success(
                             "✓ Verificación correcta: A · A⁻¹ = I"
                         )
+                    st.divider()
+                    mostrar_desarrollo(resultados["desarrollos"]["inversa"])
 
                 else:
                     st.info(errores["inversa"])
@@ -2260,8 +2519,22 @@ elif operacion == "Análisis de una matriz":
                         A.rows
                     )
 
-                    st.divider()
+                    if resultado_auto["diagonalizable"] and resultados.get("diagonalizacion"):
+                        diag = resultados["diagonalizacion"]
+                        st.divider()
+                        st.markdown("### Matriz diagonalizada")
+                        st.caption("P contiene los autovectores como columnas y D los autovalores correspondientes en la diagonal.")
+                        mostrar_matriz("P", diag["P"], "Matriz de autovectores")
+                        mostrar_matriz("D", diag["D"], "Matriz diagonal")
+                        mostrar_matriz(r"P^{-1}", diag["P_inversa"], "Inversa de P")
+                        st.latex(rf"P^{{-1}}AP={sp.latex(diag['verificacion'])}=D")
+                        st.latex(rf"A=PDP^{{-1}}={sp.latex(diag['reconstruccion'])}")
+                        st.success("✓ Diagonalización verificada.")
 
+                    st.divider()
+                    mostrar_desarrollo(resultados["desarrollos"]["autovalores"])
+
+                    st.divider()
                     st.markdown("### Verificación")
 
                     st.caption(
@@ -2374,6 +2647,9 @@ elif operacion == "Análisis de una matriz":
                         rf"\dim C(A^T) + \dim N(A^T) = "
                         rf"{rango} + {A.rows - rango} = {A.rows}"
                     )
+
+                    st.divider()
+                    mostrar_desarrollo(resultados["desarrollos"]["subespacios"])
 
                     st.divider()
 
@@ -2653,6 +2929,9 @@ elif operacion == "Análisis de una matriz":
                             "numérico mayor al esperado."
                         )
 
+                    st.divider()
+                    mostrar_desarrollo(resultados["desarrollos"]["svd"])
+
                 else:
                     st.info(errores["svd"])
 
@@ -2871,6 +3150,10 @@ elif operacion == "Sistemas lineales":
                         )
                     )
 
+                pasos_sistema=desarrollo_sistema(A,b,resultado)
+                st.divider(); mostrar_desarrollo(pasos_sistema)
+                boton_pdf_operacion("Sistema lineal Ax=b",[("Matriz A",A),("Vector b",b)],pasos_sistema,"sistema_lineal.pdf",sp.sstr(resultado.get("solucion")),key="pdf_sistema")
+
             except ValueError as error:
 
                 st.error(str(error))
@@ -3013,6 +3296,9 @@ elif operacion == "Ortogonalidad":
                             "Los vectores no son ortogonales "
                             "porque u · v ≠ 0."
                         )
+                    pasos_pp=desarrollo_producto_punto(u,v,resultado)
+                    st.divider(); mostrar_desarrollo(pasos_pp)
+                    boton_pdf_operacion("Producto punto",[("Vector u",u),("Vector v",v)],pasos_pp,"producto_punto.pdf",sp.sstr(resultado),key="pdf_pp")
 
                 except ValueError as error:
 
@@ -3112,6 +3398,9 @@ elif operacion == "Ortogonalidad":
                             "✓ El vector normalizado "
                             "tiene norma 1."
                         )
+                    pasos_norma=desarrollo_norma(v,norma,normalizado)
+                    st.divider(); mostrar_desarrollo(pasos_norma)
+                    boton_pdf_operacion("Norma y normalización",[("Vector v",v)],pasos_norma,"norma_normalizacion.pdf",sp.sstr(normalizado),key="pdf_norma")
 
                 except ValueError as error:
 
@@ -3313,6 +3602,10 @@ elif operacion == "Ortogonalidad":
                             "✓ La base obtenida es "
                             "ortonormal."
                         )
+                    pasos_gs=desarrollo_gram_schmidt(vectores,base_ortogonal,base_ortonormal)
+                    st.divider(); mostrar_desarrollo(pasos_gs)
+                    entradas_gs=[(f"Vector v{i+1}",vv) for i,vv in enumerate(vectores)]
+                    boton_pdf_operacion("Proceso de Gram-Schmidt",entradas_gs,pasos_gs,"gram_schmidt.pdf","Base ortonormal: "+sp.sstr(base_ortonormal),key="pdf_gs")
 
                 except ValueError as error:
 
