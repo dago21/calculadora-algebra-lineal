@@ -18,6 +18,8 @@ from algebra import (
     normalizar_vector,
     gram_schmidt,
     descomposicion_svd,
+    calcular_operacion_combinada,
+    analizar_subespacios,
 )
 
 
@@ -844,8 +846,53 @@ def desarrollo_autovalores(A, resultado_auto, diag=None):
 
 
 def desarrollo_subespacios(A,sub):
-    rref,piv=A.rref()
-    return [_paso("latex",rf"\operatorname{{rref}}(A)={sp.latex(rref)}","Reducir A"),_paso("texto",f"Columnas pivote: {[i+1 for i in piv]}. rango(A)={sub['rango']}.","Pivotes y rango"),_paso("latex",rf"\dim C(A)={sub['rango']},\quad\dim N(A)={A.cols-sub['rango']}"),_paso("latex",rf"\dim C(A^T)={sub['rango']},\quad\dim N(A^T)={A.rows-sub['rango']}"),_paso("texto","Las bases salen de columnas pivote, filas independientes y soluciones de Ax=0 y A^T y=0.")]
+    rref, piv = A.rref()
+    _, pasos_gauss = gauss_jordan_con_pasos(A, max_pasos=80)
+
+    pasos = [
+        _paso(
+            "texto",
+            "Se aplica el método de Gauss–Jordan. En cada columna se "
+            "elige un pivote, se lo convierte en 1 y se hacen ceros todos "
+            "los demás elementos de esa columna.",
+            "Método"
+        )
+    ]
+
+    pasos.extend(pasos_gauss)
+
+    pasos.extend([
+        _paso(
+            "latex",
+            rf"\operatorname{{rref}}(A)={sp.latex(rref)}",
+            "Forma escalonada reducida final"
+        ),
+        _paso(
+            "texto",
+            f"Columnas pivote: {[i + 1 for i in piv]}. "
+            f"Por tanto, rango(A) = {sub['rango']}.",
+            "Pivotes y rango"
+        ),
+        _paso(
+            "latex",
+            rf"\dim C(A)={sub['rango']},\quad "
+            rf"\dim N(A)={A.cols-sub['rango']}"
+        ),
+        _paso(
+            "latex",
+            rf"\dim C(A^T)={sub['rango']},\quad "
+            rf"\dim N(A^T)={A.rows-sub['rango']}"
+        ),
+        _paso(
+            "texto",
+            "Las columnas pivote de la matriz original forman una base "
+            "de C(A). Las filas no nulas de la forma reducida generan "
+            "C(Aᵀ), y las variables libres permiten construir N(A).",
+            "Interpretación"
+        )
+    ])
+
+    return pasos
 
 
 def desarrollo_svd(A,resultados):
@@ -1772,6 +1819,14 @@ with st.sidebar:
         args=("Análisis de una matriz",)
     )
 
+    st.button(
+        "🧩  Operaciones combinadas",
+        use_container_width=True,
+        key="btn_combinadas",
+        on_click=cambiar_operacion,
+        args=("Operaciones combinadas",)
+    )
+
     st.markdown(
         '<div class="sidebar-section">SISTEMAS Y VECTORES</div>',
         unsafe_allow_html=True
@@ -2068,6 +2123,138 @@ elif operacion == "Multiplicación de matrices":
 # ============================================================
 # ANÁLISIS DE UNA MATRIZ
 # ============================================================
+
+elif operacion == "Operaciones combinadas":
+
+    st.header("🧩 Operaciones combinadas")
+
+    st.markdown(
+        """
+        <div class="info-box">
+        Construya una nueva matriz <b>C</b> combinando <b>A</b>, <b>B</b> y
+        sus transpuestas. Luego puede calcular los cuatro subespacios
+        fundamentales de <b>C</b> o resolver el sistema <b>Cx = b</b>.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    operacion_combinada = st.selectbox(
+        "Operación para construir C",
+        [
+            "A + B", "A + Bᵀ", "Aᵀ + B", "Aᵀ + Bᵀ",
+            "A - B", "A - Bᵀ", "Aᵀ - B",
+            "A × B", "A × Bᵀ", "Aᵀ × B", "Aᵀ × Bᵀ"
+        ],
+        key="combinada_operacion"
+    )
+
+    st.markdown("### Dimensiones")
+    d1, d2, d3, d4 = st.columns(4)
+    with d1:
+        filas_A = int(st.number_input("Filas de A", 1, 10, 4, key="comb_filas_A"))
+    with d2:
+        columnas_A = int(st.number_input("Columnas de A", 1, 10, 5, key="comb_columnas_A"))
+    with d3:
+        filas_B = int(st.number_input("Filas de B", 1, 10, 5, key="comb_filas_B"))
+    with d4:
+        columnas_B = int(st.number_input("Columnas de B", 1, 10, 4, key="comb_columnas_B"))
+
+    mostrar_ayuda_entrada()
+    col_A, col_B = st.columns(2)
+    with col_A:
+        A = ingresar_matriz("A", filas_A, columnas_A)
+    with col_B:
+        B = ingresar_matriz("B", filas_B, columnas_B)
+
+    accion = st.radio(
+        "Cálculo que se aplicará a C",
+        ["Analizar subespacios de C", "Resolver Cx = b"],
+        horizontal=True,
+        key="comb_accion"
+    )
+
+    b = None
+    filas_resultado_estimadas = {
+        "A + B": filas_A, "A + Bᵀ": filas_A, "Aᵀ + B": columnas_A,
+        "Aᵀ + Bᵀ": columnas_A, "A - B": filas_A,
+        "A - Bᵀ": filas_A, "Aᵀ - B": columnas_A,
+        "A × B": filas_A, "A × Bᵀ": filas_A,
+        "Aᵀ × B": columnas_A, "Aᵀ × Bᵀ": columnas_A,
+    }
+    if accion == "Resolver Cx = b":
+        st.markdown("### Vector de términos independientes b")
+        b = ingresar_vector("b", filas_resultado_estimadas[operacion_combinada])
+
+    if st.button("🧮 Calcular operación combinada", type="primary", use_container_width=True):
+        if A is None or B is None or (accion == "Resolver Cx = b" and b is None):
+            st.error("Corrija los valores inválidos antes de calcular.")
+        else:
+            try:
+                C = calcular_operacion_combinada(A, B, operacion_combinada)
+                st.divider()
+                st.markdown('<div class="resultado-titulo">✓ Matriz resultante</div>', unsafe_allow_html=True)
+                mostrar_matriz("C", C, f"C = {operacion_combinada}")
+                st.caption(f"Dimensión de C: {C.rows} × {C.cols}")
+
+                if accion == "Analizar subespacios de C":
+                    sub = analizar_subespacios(C)
+                    st.latex(rf"\operatorname{{rango}}(C)={sub['rango']},\quad \operatorname{{nulidad}}(C)={sub['nulidad']}")
+                    st.markdown("### Forma escalonada reducida")
+                    st.latex(sp.latex(sub["rref"]))
+
+                    with st.expander(
+                        "Ver desarrollo paso a paso de Gauss–Jordan",
+                        expanded=True
+                    ):
+                        pasos_reduccion = desarrollo_subespacios(C, sub)
+                        mostrar_desarrollo(
+                            pasos_reduccion,
+                            "Reducción de la matriz C"
+                        )
+
+                    nombres = [
+                        ("Espacio columna C(C)", "espacio_columna"),
+                        ("Espacio nulo N(C)", "espacio_nulo"),
+                        ("Espacio fila C(Cᵀ)", "espacio_fila"),
+                        ("Espacio nulo izquierdo N(Cᵀ)", "espacio_nulo_izquierdo"),
+                    ]
+                    for titulo, clave in nombres:
+                        st.markdown(f"### {titulo}")
+                        vectores = sub[clave]
+                        if vectores:
+                            for indice, vector in enumerate(vectores, 1):
+                                st.latex(rf"v_{{{indice}}}={sp.latex(vector)}")
+                        else:
+                            st.write("La base es vacía; el espacio contiene solamente al vector nulo.")
+
+                    st.markdown("### Verificación del espacio nulo")
+                    if sub["espacio_nulo"]:
+                        for indice, vector in enumerate(sub["espacio_nulo"], 1):
+                            st.latex(rf"C v_{{{indice}}}={sp.latex(C * vector)}")
+                    else:
+                        st.write("La nulidad es 0.")
+                else:
+                    resultado = resolver_sistema(C, b)
+                    mostrar_matriz("b", b, "Vector de términos independientes")
+                    clasificacion = resultado["clasificacion"]
+                    if clasificacion == "Solución única":
+                        st.success("✓ El sistema tiene una solución única.")
+                    elif clasificacion == "Infinitas soluciones":
+                        st.warning("El sistema tiene infinitas soluciones.")
+                    else:
+                        st.error("El sistema no tiene solución.")
+                    st.markdown("### Análisis de rangos")
+                    st.latex(rf"\operatorname{{rg}}(C)={resultado['rango_A']},\quad \operatorname{{rg}}([C|b])={resultado['rango_aumentada']}")
+                    st.write("Número de incógnitas:", resultado["numero_incognitas"])
+                    st.markdown("### Forma escalonada reducida de [C|b]")
+                    st.latex(sp.latex(resultado["rref"]))
+                    if resultado["solucion"] is not None:
+                        st.markdown("### Solución")
+                        st.latex(sp.latex(resultado["solucion"]))
+            except ValueError as error:
+                st.error(str(error))
+
 
 elif operacion == "Análisis de una matriz":
 
@@ -3610,4 +3797,3 @@ elif operacion == "Ortogonalidad":
                 except ValueError as error:
 
                     st.error(str(error))
-

@@ -43,6 +43,55 @@ def transponer_matriz(A):
     return A.T
 
 
+def calcular_operacion_combinada(A, B, operacion):
+    """Construye una matriz a partir de A, B y sus transpuestas.
+
+    Las operaciones se identifican con la misma notación que se muestra en
+    la interfaz. Se validan las dimensiones mediante las funciones básicas
+    para devolver mensajes comprensibles al estudiante.
+    """
+
+    operaciones = {
+        "A + B": (sumar_matrices, A, B),
+        "A + Bᵀ": (sumar_matrices, A, B.T),
+        "Aᵀ + B": (sumar_matrices, A.T, B),
+        "Aᵀ + Bᵀ": (sumar_matrices, A.T, B.T),
+        "A - B": (sumar_matrices, A, -B),
+        "A - Bᵀ": (sumar_matrices, A, -B.T),
+        "Aᵀ - B": (sumar_matrices, A.T, -B),
+        "A × B": (multiplicar_matrices, A, B),
+        "A × Bᵀ": (multiplicar_matrices, A, B.T),
+        "Aᵀ × B": (multiplicar_matrices, A.T, B),
+        "Aᵀ × Bᵀ": (multiplicar_matrices, A.T, B.T),
+    }
+
+    if operacion not in operaciones:
+        raise ValueError("La operación combinada seleccionada no es válida.")
+
+    funcion, izquierda, derecha = operaciones[operacion]
+    return funcion(izquierda, derecha).applyfunc(sp.simplify)
+
+
+def analizar_subespacios(A):
+    """Devuelve las bases y dimensiones de los cuatro subespacios de A."""
+
+    rango = A.rank()
+    rref, columnas_pivote = A.rref()
+    return {
+        "rango": rango,
+        "rref": rref,
+        "columnas_pivote": columnas_pivote,
+        "espacio_columna": A.columnspace(),
+        "espacio_fila": A.rowspace(),
+        "espacio_nulo": A.nullspace(),
+        "espacio_nulo_izquierdo": A.T.nullspace(),
+        "dimension_columna": rango,
+        "dimension_fila": rango,
+        "nulidad": A.cols - rango,
+        "nulidad_izquierda": A.rows - rango,
+    }
+
+
 def determinante_matriz(A):
     """
     Calcula el determinante de una matriz cuadrada.
