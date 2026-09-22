@@ -359,11 +359,13 @@ def gram_schmidt(vectores):
 
 def descomposicion_svd(A, tolerancia=1e-10):
     """
-    Calcula la descomposición en valores singulares:
+    Calcula la descomposición en valores singulares y la pseudoinversa:
 
         A = U * Sigma * V^T
+        A^+ = V * Sigma^+ * U^T
 
-    Funciona para matrices cuadradas y rectangulares.
+    Funciona para matrices cuadradas y rectangulares, incluso si A no
+    tiene rango completo.
 
     Devuelve:
     - U
@@ -372,6 +374,9 @@ def descomposicion_svd(A, tolerancia=1e-10):
     - valores singulares
     - matriz reconstruida
     - error de reconstrucción
+    - Sigma_pinv
+    - pseudoinversa
+    - verificaciones de Moore-Penrose
     """
 
     # --------------------------------------------------
@@ -441,7 +446,7 @@ def descomposicion_svd(A, tolerancia=1e-10):
     )
 
     # --------------------------------------------------
-    # RECONSTRUCCIÓN
+    # RECONSTRUCCIÓN DE A
     # --------------------------------------------------
 
     reconstruida = (
@@ -451,20 +456,82 @@ def descomposicion_svd(A, tolerancia=1e-10):
     )
 
     # --------------------------------------------------
-    # ERROR NUMÉRICO
+    # PSEUDOINVERSA DE MOORE-PENROSE A PARTIR DE LA SVD
+    # --------------------------------------------------
+
+    # Si Sigma es m x n, Sigma^+ es n x m.
+    Sigma_pinv = np.zeros(
+        (columnas, filas)
+    )
+
+    # Se considera no nulo un valor singular que supera una tolerancia
+    # escalada por el mayor valor singular y por el tamaño de la matriz.
+    # Esto evita invertir valores numéricamente equivalentes a cero.
+    sigma_max = (
+        float(valores_singulares[0])
+        if len(valores_singulares) > 0
+        else 0.0
+    )
+
+    umbral = max(
+        tolerancia,
+        np.finfo(float).eps * max(filas, columnas) * sigma_max
+    )
+
+    for i, sigma in enumerate(valores_singulares):
+        if sigma > umbral:
+            Sigma_pinv[i, i] = 1.0 / sigma
+
+    V = Vt.T
+    pseudoinversa = (
+        V
+        @ Sigma_pinv
+        @ U.T
+    )
+
+    # --------------------------------------------------
+    # ERRORES / VERIFICACIONES NUMÉRICAS
     # --------------------------------------------------
 
     error = np.linalg.norm(
         A_np - reconstruida
     )
 
-    # Eliminar números extremadamente pequeños
-    U[np.abs(U) < tolerancia] = 0
-    Sigma[np.abs(Sigma) < tolerancia] = 0
-    Vt[np.abs(Vt) < tolerancia] = 0
-    reconstruida[
-        np.abs(reconstruida) < tolerancia
-    ] = 0
+    # Condiciones de Moore-Penrose:
+    # 1) A A+ A = A
+    # 2) A+ A A+ = A+
+    # 3) (A A+)^T = A A+
+    # 4) (A+ A)^T = A+ A
+    AA_p = A_np @ pseudoinversa
+    A_pA = pseudoinversa @ A_np
+
+    verificacion_mp1 = AA_p @ A_np
+    verificacion_mp2 = A_pA @ pseudoinversa
+    verificacion_mp3 = AA_p.T
+    verificacion_mp4 = A_pA.T
+
+    error_mp1 = np.linalg.norm(verificacion_mp1 - A_np)
+    error_mp2 = np.linalg.norm(verificacion_mp2 - pseudoinversa)
+    error_mp3 = np.linalg.norm(verificacion_mp3 - AA_p)
+    error_mp4 = np.linalg.norm(verificacion_mp4 - A_pA)
+
+    # Eliminar números extremadamente pequeños solamente después de
+    # completar todos los cálculos, para no alterar la precisión interna.
+    matrices_limpieza = [
+        U,
+        Sigma,
+        Vt,
+        reconstruida,
+        Sigma_pinv,
+        pseudoinversa,
+        verificacion_mp1,
+        verificacion_mp2,
+        AA_p,
+        A_pA,
+    ]
+
+    for matriz in matrices_limpieza:
+        matriz[np.abs(matriz) < tolerancia] = 0
 
     return {
         "U": U,
@@ -472,5 +539,16 @@ def descomposicion_svd(A, tolerancia=1e-10):
         "Vt": Vt,
         "valores_singulares": valores_singulares,
         "reconstruida": reconstruida,
-        "error": error
+        "error": error,
+        "Sigma_pinv": Sigma_pinv,
+        "pseudoinversa": pseudoinversa,
+        "umbral_pseudoinversa": umbral,
+        "verificacion_mp1": verificacion_mp1,
+        "verificacion_mp2": verificacion_mp2,
+        "AA_p": AA_p,
+        "A_pA": A_pA,
+        "error_mp1": error_mp1,
+        "error_mp2": error_mp2,
+        "error_mp3": error_mp3,
+        "error_mp4": error_mp4,
     }

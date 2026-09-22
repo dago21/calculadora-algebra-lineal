@@ -895,9 +895,90 @@ def desarrollo_subespacios(A,sub):
     return pasos
 
 
-def desarrollo_svd(A,resultados):
-    AtA=(A.T*A).applyfunc(sp.simplify); pasos=[_paso("latex",rf"A^TA={sp.latex(AtA)}","Formar AᵀA"),_paso("texto","Los valores singulares son las raíces cuadradas no negativas de los autovalores de A^T A."),_paso("latex",r"A=U\Sigma V^T")]
-    pasos += [_paso("latex",rf"U={sp.latex(resultados['U'])}"),_paso("latex",rf"\Sigma={sp.latex(resultados['Sigma'])}"),_paso("latex",rf"V^T={sp.latex(resultados['Vt'])}"),_paso("latex",rf"U\Sigma V^T={sp.latex(resultados['reconstruida'])}","Reconstrucción")]
+def desarrollo_svd(A, resultados):
+    AtA = (A.T * A).applyfunc(sp.simplify)
+
+    pasos = [
+        _paso(
+            "latex",
+            rf"A^TA={sp.latex(AtA)}",
+            "Formar AᵀA"
+        ),
+        _paso(
+            "texto",
+            "Los valores singulares son las raíces cuadradas no negativas "
+            "de los autovalores de A^T A."
+        ),
+        _paso(
+            "latex",
+            r"A=U\Sigma V^T",
+            "Descomposición SVD"
+        ),
+        _paso("latex", rf"U={sp.latex(resultados['U'])}"),
+        _paso("latex", rf"\Sigma={sp.latex(resultados['Sigma'])}"),
+        _paso("latex", rf"V^T={sp.latex(resultados['Vt'])}"),
+        _paso(
+            "latex",
+            rf"U\Sigma V^T={sp.latex(resultados['reconstruida'])}",
+            "Reconstrucción"
+        ),
+    ]
+
+    if "Sigma_pinv" in resultados and "pseudoinversa" in resultados:
+        pasos.extend([
+            _paso(
+                "texto",
+                "Para construir Σ⁺ se transpone la forma de Σ y cada valor "
+                "singular no nulo σᵢ se reemplaza por 1/σᵢ.",
+                "Construcción de la pseudoinversa"
+            ),
+            _paso(
+                "latex",
+                r"\Sigma^+=\operatorname{diag}"
+                r"\left(\frac{1}{\sigma_1},\ldots,\frac{1}{\sigma_r}\right)"
+            ),
+            _paso(
+                "latex",
+                rf"\Sigma^+={sp.latex(resultados['Sigma_pinv'])}",
+                "Matriz Σ⁺"
+            ),
+            _paso(
+                "latex",
+                r"A^+=V\Sigma^+U^T",
+                "Fórmula de Moore–Penrose"
+            ),
+            _paso(
+                "latex",
+                rf"A^+={sp.latex(resultados['pseudoinversa'])}",
+                "Pseudoinversa"
+            ),
+        ])
+
+        svd = resultados.get("svd", {})
+        if all(clave in svd for clave in ("error_mp1", "error_mp2", "error_mp3", "error_mp4")):
+            pasos.extend([
+                _paso(
+                    "latex",
+                    rf"\|AA^+A-A\|\approx {svd['error_mp1']:.3e}",
+                    "Verificación 1: AA⁺A = A"
+                ),
+                _paso(
+                    "latex",
+                    rf"\|A^+AA^+-A^+\|\approx {svd['error_mp2']:.3e}",
+                    "Verificación 2: A⁺AA⁺ = A⁺"
+                ),
+                _paso(
+                    "latex",
+                    rf"\|(AA^+)^T-AA^+\|\approx {svd['error_mp3']:.3e}",
+                    "Verificación 3: AA⁺ es simétrica"
+                ),
+                _paso(
+                    "latex",
+                    rf"\|(A^+A)^T-A^+A\|\approx {svd['error_mp4']:.3e}",
+                    "Verificación 4: A⁺A es simétrica"
+                ),
+            ])
+
     return pasos
 
 
@@ -1418,6 +1499,36 @@ def generar_pdf_analisis(A, resultados, errores):
             Paragraph(
                 "Error de reconstrucción: "
                 f"{resultado_svd['error']:.3e}",
+                estilos["BodyText"]
+            )
+        )
+
+        elementos.append(Spacer(1, 10))
+        elementos.append(
+            Paragraph(
+                "Pseudoinversa de Moore-Penrose",
+                estilos["Subseccion"]
+            )
+        )
+        elementos.append(
+            Paragraph(
+                "A partir de A = U Sigma V^T se utiliza "
+                "A^+ = V Sigma^+ U^T. Sigma^+ se obtiene reemplazando "
+                "cada valor singular no nulo por su recíproco.",
+                estilos["BodyText"]
+            )
+        )
+        elementos.append(Spacer(1, 6))
+        tabla_matriz(resultados["Sigma_pinv"], "Matriz Sigma^+")
+        tabla_matriz(resultados["pseudoinversa"], "Pseudoinversa A^+")
+
+        elementos.append(
+            Paragraph(
+                "Verificaciones de Moore-Penrose (errores numéricos): "
+                f"AA^+A=A: {resultado_svd['error_mp1']:.3e}; "
+                f"A^+AA^+=A^+: {resultado_svd['error_mp2']:.3e}; "
+                f"(AA^+)^T=AA^+: {resultado_svd['error_mp3']:.3e}; "
+                f"(A^+A)^T=A^+A: {resultado_svd['error_mp4']:.3e}.",
                 estilos["BodyText"]
             )
         )
@@ -2427,6 +2538,22 @@ elif operacion == "Análisis de una matriz":
                 resultados["reconstruida"] = numpy_a_sympy(
                     resultado_svd["reconstruida"]
                 )
+                resultados["Sigma_pinv"] = numpy_a_sympy(
+                    resultado_svd["Sigma_pinv"],
+                    decimales=6
+                )
+                resultados["pseudoinversa"] = numpy_a_sympy(
+                    resultado_svd["pseudoinversa"],
+                    decimales=6
+                )
+                resultados["verificacion_mp1"] = numpy_a_sympy(
+                    resultado_svd["verificacion_mp1"],
+                    decimales=6
+                )
+                resultados["verificacion_mp2"] = numpy_a_sympy(
+                    resultado_svd["verificacion_mp2"],
+                    decimales=6
+                )
 
             except ValueError as error:
                 errores["svd"] = str(error)
@@ -3035,6 +3162,8 @@ elif operacion == "Análisis de una matriz":
                     Sigma = resultados["Sigma"]
                     Vt = resultados["Vt"]
                     reconstruida = resultados["reconstruida"]
+                    Sigma_pinv = resultados["Sigma_pinv"]
+                    pseudoinversa = resultados["pseudoinversa"]
 
                     st.latex(
                         r"A = U\Sigma V^T"
@@ -3114,6 +3243,84 @@ elif operacion == "Análisis de una matriz":
                         st.warning(
                             "La reconstrucción presenta un error "
                             "numérico mayor al esperado."
+                        )
+
+                    st.divider()
+
+                    # ================================================
+                    # PSEUDOINVERSA DE MOORE-PENROSE
+                    # ================================================
+
+                    st.markdown("### Pseudoinversa de Moore–Penrose")
+
+                    st.caption(
+                        "La pseudoinversa se construye directamente desde la SVD. "
+                        "Si A = UΣVᵀ, entonces A⁺ = VΣ⁺Uᵀ."
+                    )
+
+                    st.latex(r"A^+=V\Sigma^+U^T")
+
+                    st.markdown("#### Construcción de Σ⁺")
+                    st.markdown(
+                        "Se invierte cada valor singular no nulo: "
+                        r"$\sigma_i \mapsto 1/\sigma_i$."
+                    )
+
+                    mostrar_matriz(
+                        r"\Sigma^+",
+                        Sigma_pinv,
+                        "Matriz Σ⁺"
+                    )
+                    st.caption(
+                        f"Dimensión: {Sigma_pinv.rows} × {Sigma_pinv.cols}"
+                    )
+
+                    st.markdown("#### Resultado")
+
+                    mostrar_matriz(
+                        r"A^+",
+                        pseudoinversa,
+                        "Pseudoinversa de A"
+                    )
+                    st.caption(
+                        f"Dimensión: {pseudoinversa.rows} × {pseudoinversa.cols}"
+                    )
+
+                    st.markdown("#### Verificación de Moore–Penrose")
+
+                    st.latex(
+                        rf"\|AA^+A-A\| \approx "
+                        rf"{resultado_svd['error_mp1']:.3e}"
+                    )
+                    st.latex(
+                        rf"\|A^+AA^+-A^+\| \approx "
+                        rf"{resultado_svd['error_mp2']:.3e}"
+                    )
+                    st.latex(
+                        rf"\|(AA^+)^T-AA^+\| \approx "
+                        rf"{resultado_svd['error_mp3']:.3e}"
+                    )
+                    st.latex(
+                        rf"\|(A^+A)^T-A^+A\| \approx "
+                        rf"{resultado_svd['error_mp4']:.3e}"
+                    )
+
+                    error_mp_max = max(
+                        resultado_svd["error_mp1"],
+                        resultado_svd["error_mp2"],
+                        resultado_svd["error_mp3"],
+                        resultado_svd["error_mp4"],
+                    )
+
+                    if error_mp_max < 1e-8:
+                        st.success(
+                            "✓ La matriz calculada satisface numéricamente "
+                            "las cuatro condiciones de Moore–Penrose."
+                        )
+                    else:
+                        st.warning(
+                            "La verificación de Moore–Penrose presenta un "
+                            "error numérico mayor al esperado."
                         )
 
                     st.divider()
